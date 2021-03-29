@@ -30,11 +30,21 @@
 // "DEBUG" se você quer apenas debugar o código no monitor serial
 // você não precisa comentar ou descomentar qualquer biblioteca MIDI abaixo depois de definir sua placa
 
-#define ATMEGA328 1 //* coloque aqui o uC que você está usando, como nas linhas acima seguidas de "1", como "ATMEGA328 1", "DEBUG 1", etc.
+#define ATMEGA32U4 1 //* coloque aqui o uC que você está usando, como nas linhas acima seguidas de "1", como "ATMEGA328 1", "DEBUG 1", etc.
 
 /////////////////////////////////////////////
 // BIBLIOTECAS
 // -- Define a biblioteca MIDI -- //
+
+//Mux control pins
+int s0 = 6;
+int s1 = 7;
+int s2 = 8;
+int s3 = 9;
+
+//Mux in "SIG" pin
+int SIG_pin = 2;
+
 
 // se estiver usando com ATmega328 - Uno, Mega, Nano ...
 #ifdef ATMEGA328
@@ -50,8 +60,8 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 
 /////////////////////////////////////////////
 // BOTOES
-const int N_BUTTONS = 12; //*  número total de botões
-const int BUTTON_ARDUINO_PIN[N_BUTTONS] = {10, 16, 14, 15, 6, 7, 8, 9, 2, 3, 4, 5}; //* pinos de cada botão conectado diretamente ao Arduino
+const int N_BUTTONS = 1; //*  número total de botões
+const int BUTTON_ARDUINO_PIN[N_BUTTONS] = {10}; //* pinos de cada botão conectado diretamente ao Arduino
 
 //#define pin13 1 // descomente se você estiver usando o pino 13 (o pino com led), ou comente a linha se não
 byte pin13index = 12; //* coloque o índice do pin 13 do array buttonPin[] se você estiver usando, se não, comente
@@ -65,7 +75,7 @@ unsigned long debounceDelay = 20;    //* o tempo de debounce; aumentar se a saí
 
 /////////////////////////////////////////////
 // POTENCIOMETROS
-const int N_POTS = 6; //* número total de pots (slide e rotativo)
+const int N_POTS = 16; //* número total de pots (slide e rotativo)
 const int POT_ARDUINO_PIN[N_POTS] = {A5, A4, A3, A2, A1, A0}; //* pinos de cada pot conectado diretamente ao Arduino
 
 int potCState[N_POTS] = {0}; // estado atual da porta analogica
@@ -91,6 +101,16 @@ byte cc = 11; //* O mais baixo MIDI CC a ser usado
 // SETUP
 void setup() {
 
+  pinMode(s0, OUTPUT); 
+  pinMode(s1, OUTPUT); 
+  pinMode(s2, OUTPUT); 
+  pinMode(s3, OUTPUT); 
+
+  digitalWrite(s0, LOW);
+  digitalWrite(s1, LOW);
+  digitalWrite(s2, LOW);
+  digitalWrite(s3, LOW);
+  
   // Baud Rate
   // use se estiver usando with ATmega328 (uno, mega, nano...)
   // 31250 para MIDI class compliant | 115200 para Hairless MIDI
@@ -198,6 +218,40 @@ Serial.println(": button off");
   }
 }
 
+
+int readMux(int channel){
+  int controlPin[] = {s0, s1, s2, s3};
+
+  int muxChannel[16][4]={
+    {0,0,0,0}, //channel 0
+    {1,0,0,0}, //channel 1
+    {0,1,0,0}, //channel 2
+    {1,1,0,0}, //channel 3
+    {0,0,1,0}, //channel 4
+    {1,0,1,0}, //channel 5
+    {0,1,1,0}, //channel 6
+    {1,1,1,0}, //channel 7
+    {0,0,0,1}, //channel 8
+    {1,0,0,1}, //channel 9
+    {0,1,0,1}, //channel 10
+    {1,1,0,1}, //channel 11
+    {0,0,1,1}, //channel 12
+    {1,0,1,1}, //channel 13
+    {0,1,1,1}, //channel 14
+    {1,1,1,1}  //channel 15
+  };
+
+  //loop through the 4 sig
+  for(int i = 0; i < 4; i ++){
+    digitalWrite(controlPin[i], muxChannel[channel][i]);
+  }
+
+  //read the value at the SIG pin
+  int val = analogRead(SIG_pin);
+
+  //return the value
+  return val;
+}
 /////////////////////////////////////////////
 // POTENTIOMETERS
 void potentiometers() {
@@ -221,8 +275,9 @@ void potentiometers() {
 
   for (int i = 0; i < N_POTS; i++) { // Faz o loop de todos os potenciômetros
 
-    potCState[i] = analogRead(POT_ARDUINO_PIN[i]);
-
+    // potCState[i] = analogRead(POT_ARDUINO_PIN[i]);
+   potCState[i] = readMux(i);
+   
     midiCState[i] = map(potCState[i], 0, 1023, 0, 127); // Mapeia a leitura do potCState para um valor utilizável em midi
 
     potVar = abs(potCState[i] - potPState[i]); // Calcula o valor absoluto entre a diferença entre o estado atual e o anterior do pot
