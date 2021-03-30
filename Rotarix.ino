@@ -32,6 +32,78 @@
 
 #define ATMEGA32U4 1 //* coloque aqui o uC que você está usando, como nas linhas acima seguidas de "1", como "ATMEGA328 1", "DEBUG 1", etc.
 
+#include <Math.h>
+
+#include <Adafruit_NeoPixel.h>
+#ifdef __AVR__
+ #include <avr/power.h> // Required for 16 MHz Adafruit Trinket
+#endif
+
+#define PIXEL_PIN    3  // Digital IO pin connected to the NeoPixels.
+#define PIXEL_COUNT 12  // Number of NeoPixels
+
+
+
+// Declare our NeoPixel strip object:
+Adafruit_NeoPixel strip(PIXEL_COUNT, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
+// Argument 1 = Number of pixels in NeoPixel strip
+// Argument 2 = Arduino pin number (most are valid)
+// Argument 3 = Pixel type flags, add together as needed:
+//   NEO_KHZ800  800 KHz bitstream (most NeoPixel products w/WS2812 LEDs)
+//   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
+//   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
+//   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
+//   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
+
+boolean oldState = HIGH;
+int     mode     = 0;    // Currently-active animation mode, 0-9
+
+const uint8_t   pinBUTTON_1 = 7;
+const uint8_t   pinBUTTON_2 = 10;
+
+const unsigned long DEBOUNCE_DELAY = 50UL;
+
+struct button_t
+{
+    const uint8_t   pin;
+    uint8_t         state;
+    uint8_t         stateLast;
+    uint8_t         count;
+    unsigned long   lastDebounceTime;
+};
+
+struct button_t     selector[] =
+{
+      { pinBUTTON_1, LOW, LOW, 0, 0UL }
+    , { pinBUTTON_2, LOW, LOW, 0, 0UL }
+};
+
+boolean Debounce(struct button_t* button)
+{
+    const unsigned long millisRef = millis();
+   
+    uint8_t state = digitalRead((*button).pin);
+    if ( state != (*button).stateLast )
+    {
+        (*button).lastDebounceTime = millisRef;
+    }
+
+    if ( (millisRef - (*button).lastDebounceTime) > DEBOUNCE_DELAY )
+    {
+        if ( state != (*button).state )
+        {
+            (*button).state = state;
+            if ( (*button).state == HIGH )
+            {
+                (*button).stateLast = state;
+                return HIGH;
+            }
+        }
+    }
+    (*button).stateLast = state;
+    return LOW;
+}
+
 /////////////////////////////////////////////
 // BIBLIOTECAS
 // -- Define a biblioteca MIDI -- //
@@ -95,11 +167,15 @@ unsigned long timer[N_POTS] = {0}; // armazena o tempo que passou desde que o ti
 // midi
 byte midiCh = 2; //* Canal MIDI a ser usado
 byte note = 36; //* nota mais baixa a ser usada
-byte cc = 11; //* O mais baixo MIDI CC a ser usado
+byte cc = 0; //* O mais baixo MIDI CC a ser usado
 
 /////////////////////////////////////////////
 // SETUP
 void setup() {
+
+  strip.begin(); // Initialize NeoPixel strip object (REQUIRED)
+  strip.show();  // Initialize all pixels to 'off'
+
 
   pinMode(s0, OUTPUT); 
   pinMode(s1, OUTPUT); 
@@ -116,6 +192,9 @@ void setup() {
   // 31250 para MIDI class compliant | 115200 para Hairless MIDI
   Serial.begin(31250); //*
 
+    strip.begin(); // Initialize NeoPixel strip object (REQUIRED)
+    strip.show();  // Initialize all pixels to 'off'
+    
 #ifdef DEBUG
 Serial.println("Debug mode");
 Serial.println();
@@ -137,7 +216,39 @@ pinMode(BUTTON_ARDUINO_PIN[pin13index], INPUT);
 /////////////////////////////////////////////
 // LOOP
 void loop() {
+    int last = selector[0].count;
+    int sensorValue = analogRead(A0);
+    selector[0].count = round(sensorValue / 91);
+    Serial.println(selector[0].count);
+    delay(1);
+    if (selector[0].count != last) {
+    strip.clear();
+    strip.show();
+    strip.setPixelColor(selector[0].count,250,0,250);
+    strip.show();
+    selector[0].state = selector[0].count;
+    }
+    
+    if ( HIGH == Debounce(&selector[0]) )
+    {
+        selector[0].count++;
+    }
 
+    if ( HIGH == Debounce(&selector[1]) )
+    {
+        strip.setPixelColor(selector[1].count,0,0,0);
+        selector[1].count++;
+        if (selector[1].count > 11) {
+          selector[1].count = 0;        
+        }
+        //theaterChaseRainbow(5);
+        strip.setPixelColor(selector[1].count,250,250,250);
+        strip.show();
+        delay(100);
+        Serial.println(selector[1].count);
+    }
+            
+    strip.show();
   buttons();
   potentiometers();
 
@@ -305,7 +416,8 @@ MIDI.sendControlChange(cc + i, midiCState[i], midiCh); // cc number, cc value, m
 
 #elif ATMEGA32U4
 // ATmega32U4 (micro, pro micro, leonardo...)
-controlChange(midiCh, cc + i, midiCState[i]); //  (channel, CC number,  CC value)
+
+controlChange(selector[1].count, (i + 1 ) + ((selector[0].count + 1) * 11) , midiCState[i]); //  (channel, CC number,  CC value)
 MidiUSB.flush();
 
 #elif TEENSY
@@ -348,3 +460,26 @@ void controlChange(byte channel, byte control, byte value) {
 }
 
 #endif
+
+
+// Rainbow-enhanced theater marquee. Pass delay time (in ms) between frames.
+void theaterChaseRainbow(int wait) {
+  int firstPixelHue = 0;     // First pixel starts at red (hue 0)
+  for(int a=0; a<30; a++) {  // Repeat 30 times...
+    for(int b=0; b<3; b++) { //  'b' counts from 0 to 2...
+      strip.clear();         //   Set all pixels in RAM to 0 (off)
+      // 'c' counts up from 'b' to end of strip in increments of 3...
+      for(int c=b; c<strip.numPixels(); c += 3) {
+        // hue of pixel 'c' is offset by an amount to make one full
+        // revolution of the color wheel (range 65536) along the length
+        // of the strip (strip.numPixels() steps):
+        int      hue   = firstPixelHue + c * 65536L / strip.numPixels();
+        uint32_t color = strip.gamma32(strip.ColorHSV(hue)); // hue -> RGB
+        strip.setPixelColor(c, color); // Set pixel 'c' to value 'color'
+      }
+      strip.show();                // Update strip with new contents
+      delay(wait);                 // Pause for a moment
+      firstPixelHue += 65536 / 90; // One cycle of color wheel over 90 frames
+    }
+  }
+}
