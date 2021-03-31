@@ -417,7 +417,7 @@ MIDI.sendControlChange(cc + i, midiCState[i], midiCh); // cc number, cc value, m
 #elif ATMEGA32U4
 // ATmega32U4 (micro, pro micro, leonardo...)
 
-controlChange(selector[1].count, (i + 1 ) + ((selector[0].count + 1) * 11) , midiCState[i]); //  (channel, CC number,  CC value)
+controlChange(selector[1].count, (i+1) + (16 * selector[0].count) , midiCState[i]); //  (channel, CC number,  CC value)
 MidiUSB.flush();
 
 #elif TEENSY
